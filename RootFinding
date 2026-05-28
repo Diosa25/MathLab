@@ -1,0 +1,823 @@
+classdef root_finding < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                     matlab.ui.Figure
+        btnSecant                    matlab.ui.control.Button
+        btnNewton                    matlab.ui.control.Button
+        btnRegulaFalsi               matlab.ui.control.Button
+        btnBisection                 matlab.ui.control.Button
+        btnIncremental               matlab.ui.control.Button
+        iterTable                    matlab.ui.control.Table
+        eqnFieldEditField            matlab.ui.control.EditField
+        eqnFieldEditFieldLabel       matlab.ui.control.Label
+        ENTEREQUATIONLabel           matlab.ui.control.Label
+        tolField                     matlab.ui.control.NumericEditField
+        toleranceEditFieldLabel      matlab.ui.control.Label
+        bField                       matlab.ui.control.NumericEditField
+        bEditFieldLabel              matlab.ui.control.Label
+        aField                       matlab.ui.control.NumericEditField
+        aEditFieldLabel              matlab.ui.control.Label
+        NumericalMethodsSolverLabel  matlab.ui.control.Label
+        graphAxes                    matlab.ui.control.UIAxes
+    end
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: btnIncremental
+        function btnIncrementalButtonPushed(app, event)
+             a      = app.aField.Value;
+    b      = app.bField.Value;
+    dx     = app.tolField.Value;
+    eqnStr = app.eqnFieldEditField.Value;
+
+    if isempty(strtrim(eqnStr))
+        uialert(app.UIFigure,'Please enter an equation.','Error');
+        return;
+    end
+
+    if a >= b
+        uialert(app.UIFigure,'a must be less than b.','Error');
+        return;
+    end
+
+    if dx <= 0
+        uialert(app.UIFigure,'Tolerance must be > 0. Try 0.1','Error');
+        return;
+    end
+
+    if dx >= (b - a)
+        uialert(app.UIFigure,'Tolerance must be smaller than (b-a).','Error');
+        return;
+    end
+
+    try
+        f = str2func(['@(x)' eqnStr]);
+        testVal = f(a);
+
+        if ~isfinite(testVal)
+            uialert(app.UIFigure,'Equation invalid at x=a.','Error');
+            return;
+        end
+    catch
+        uialert(app.UIFigure,'Invalid equation. Example: x^3-x-2','Error');
+        return;
+    end
+
+    app.iterTable.ColumnName = ...
+        {'Iteration','x_l','dx','x_u','f(x_l)', ...
+        'f(x_u)','f(x_l)*f(x_u)','Remark'};
+
+    tableData = {};
+
+    x    = a;
+    root = NaN;
+    iter = 0;
+
+    while x < b
+
+        iter = iter + 1;
+
+        if iter > 1000
+            uialert(app.UIFigure,'Too many iterations! Try larger dx.','Warning');
+            break;
+        end
+
+        x_l      = x;
+        x_u      = min(x + dx, b);
+
+        fxl      = f(x_l);
+        fxu      = f(x_u);
+
+        prod_val = fxl * fxu;
+
+        if abs(fxl) < 1e-10
+            remark = 'Root';
+        elseif prod_val < 0
+            remark = 'Sign Change';
+        else
+            remark = '';
+        end
+
+        tableData{end+1,1} = iter;
+        tableData{end,2}   = round(x_l,6);
+        tableData{end,3}   = round(dx,6);
+        tableData{end,4}   = round(x_u,6);
+        tableData{end,5}   = round(fxl,6);
+        tableData{end,6}   = round(fxu,6);
+        tableData{end,7}   = round(prod_val,6);
+        tableData{end,8}   = remark;
+
+        if abs(fxl) < 1e-10
+            root = x_l;
+            break;
+        end
+
+        if prod_val < 0
+            root = x_l;
+            break;
+        end
+
+        x = x + dx;
+
+    end
+
+    app.iterTable.Data = tableData;
+
+    if ~isnan(root)
+
+        cla(app.graphAxes);
+
+        xPlot = linspace(a-1, b+1, 400);
+        yPlot = arrayfun(f, xPlot);
+
+        plot(app.graphAxes, xPlot, yPlot, 'b-', 'LineWidth', 2);
+
+        hold(app.graphAxes, 'on');
+
+        plot(app.graphAxes, [a-1,b+1], [0,0], 'k--', 'LineWidth', 1);
+
+        plot(app.graphAxes, [root root], [-10 10], ...
+            'r--', 'LineWidth', 1.5);
+
+        plot(app.graphAxes, root, 0, 'ro', ...
+            'MarkerSize', 10, 'MarkerFaceColor', 'red');
+
+        text(app.graphAxes, root+0.1, 1.5, ...
+            sprintf('Root=%.4f',root), ...
+            'Color','red','FontSize',9,'FontWeight','bold');
+
+        app.graphAxes.XLabel.String = 'x';
+        app.graphAxes.YLabel.String = 'f(x)';
+        app.graphAxes.Title.String  = 'Incremental Method';
+
+        app.graphAxes.XGrid = 'on';
+        app.graphAxes.YGrid = 'on';
+
+        hold(app.graphAxes, 'off');
+
+    else
+
+        uialert(app.UIFigure,'No root found in [a,b].','Result');
+
+    end
+        end
+
+        % Button pushed function: btnBisection
+        function btnBisectionButtonPushed(app, event)
+            a      = app.aField.Value;
+    b      = app.bField.Value;
+    tol    = app.tolField.Value;
+    eqnStr = app.eqnFieldEditField.Value;
+
+    if isempty(strtrim(eqnStr))
+        uialert(app.UIFigure,'Please enter an equation.','Error');
+        return;
+    end
+
+    if a >= b
+        uialert(app.UIFigure,'a must be less than b.','Error');
+        return;
+    end
+
+    if tol <= 0
+        uialert(app.UIFigure,'Tolerance must be > 0. Try 0.001','Error');
+        return;
+    end
+
+    try
+
+        f  = str2func(['@(x)' eqnStr]);
+
+        fa = f(a);
+        fb = f(b);
+
+        if ~isfinite(fa) || ~isfinite(fb)
+            uialert(app.UIFigure,'Equation invalid at a or b.','Error');
+            return;
+        end
+
+    catch
+
+        uialert(app.UIFigure,'Invalid equation. Example: x^3-x-2','Error');
+        return;
+
+    end
+
+    if fa * fb > 0
+        uialert(app.UIFigure,'f(a) and f(b) must have opposite signs!','Error');
+        return;
+    end
+
+    app.iterTable.ColumnName = ...
+        {'No. of Iteration','x_L','x_U','x_R','ea', ...
+        'f(x_L)','f(x_U)','f(x_R)','f(x_L)*f(x_R)'};
+
+    tableData = {};
+
+    iter = 0;
+
+    while (b - a)/2 > tol
+
+        iter = iter + 1;
+
+        if iter > 1000
+            uialert(app.UIFigure,'Too many iterations!','Warning');
+            break;
+        end
+
+        x_L = a;
+        x_U = b;
+
+        x_R = (a + b) / 2;
+
+        fxL = f(x_L);
+        fxU = f(x_U);
+        fxR = f(x_R);
+
+        err = (b - a) / 2;
+
+        prod_val = fxL * fxR;
+
+        tableData{end+1,1} = iter;
+        tableData{end,2}   = round(x_L,6);
+        tableData{end,3}   = round(x_U,6);
+        tableData{end,4}   = round(x_R,6);
+        tableData{end,5}   = round(err,6);
+        tableData{end,6}   = round(fxL,6);
+        tableData{end,7}   = round(fxU,6);
+        tableData{end,8}   = round(fxR,6);
+        tableData{end,9}   = round(prod_val,6);
+
+        if fxL * fxR < 0
+            b = x_R;
+        else
+            a = x_R;
+        end
+
+    end
+
+    root = (a + b) / 2;
+
+    app.iterTable.Data = tableData;
+
+    cla(app.graphAxes);
+
+    xPlot = linspace(a-2, b+2, 400);
+    yPlot = arrayfun(f, xPlot);
+
+    plot(app.graphAxes, xPlot, yPlot, 'b-', 'LineWidth', 2);
+
+    hold(app.graphAxes, 'on');
+
+    plot(app.graphAxes, [a-2,b+2], [0,0], 'k--', 'LineWidth', 1);
+
+    plot(app.graphAxes, [root root], [-10 10], ...
+        'r--', 'LineWidth', 1.5);
+
+    plot(app.graphAxes, root, 0, 'ro', ...
+        'MarkerSize', 10, 'MarkerFaceColor', 'red');
+
+    text(app.graphAxes, root+0.1, 1.5, ...
+        sprintf('Root=%.4f',root), ...
+        'Color','red','FontSize',9,'FontWeight','bold');
+
+    app.graphAxes.XLabel.String = 'x';
+    app.graphAxes.YLabel.String = 'f(x)';
+    app.graphAxes.Title.String  = 'Bisection Method';
+
+    app.graphAxes.XGrid = 'on';
+    app.graphAxes.YGrid = 'on';
+
+    hold(app.graphAxes, 'off');
+        end
+
+        % Button pushed function: btnRegulaFalsi
+        function btnRegulaFalsiButtonPushed(app, event)
+             a      = app.aField.Value;
+    b      = app.bField.Value;
+    tol    = app.tolField.Value;
+    eqnStr = app.eqnFieldEditField.Value;
+
+    if isempty(strtrim(eqnStr))
+        uialert(app.UIFigure,'Please enter an equation.','Error');
+        return;
+    end
+
+    if a >= b
+        uialert(app.UIFigure,'a must be less than b.','Error');
+        return;
+    end
+
+    if tol <= 0
+        uialert(app.UIFigure,'Tolerance must be > 0. Try 0.001','Error');
+        return;
+    end
+
+    try
+        f  = str2func(['@(x)' eqnStr]);
+
+        fa = f(a);
+        fb = f(b);
+
+        if ~isfinite(fa) || ~isfinite(fb)
+            uialert(app.UIFigure,'Equation invalid at a or b.','Error');
+            return;
+        end
+
+    catch
+
+        uialert(app.UIFigure,'Invalid equation. Example: x^3-x-2','Error');
+        return;
+
+    end
+
+    if fa * fb > 0
+        uialert(app.UIFigure,'f(a) and f(b) must have opposite signs!','Error');
+        return;
+    end
+
+    app.iterTable.ColumnName = ...
+        {'Iteration','x_l','x_r','x_u','f(x_l)', ...
+        'f(x_r)','|ea|%','f(x_l)*f(x_r)','Remark'};
+
+    tableData = {};
+
+    c_old = a;
+    c     = a;
+
+    for iter = 1:100
+
+        fa  = f(a);
+        fb  = f(b);
+
+        c   = b - fb*(b-a)/(fb-fa);
+
+        fc  = f(c);
+
+        err = abs(c - c_old);
+
+        if iter == 1
+            ea_pct = 0;
+        else
+            if c ~= 0
+                ea_pct = abs((c - c_old)/c) * 100;
+            else
+                ea_pct = 0;
+            end
+        end
+
+        prod_val = fa * fc;
+
+        if prod_val < 0
+            remark = 'Sign Change';
+        elseif abs(fc) < tol
+            remark = 'Root';
+        else
+            remark = '';
+        end
+
+        tableData{end+1,1} = iter;
+        tableData{end,2}   = round(a,6);
+        tableData{end,3}   = round(c,6);
+        tableData{end,4}   = round(b,6);
+        tableData{end,5}   = round(fa,6);
+        tableData{end,6}   = round(fc,6);
+        tableData{end,7}   = round(ea_pct,6);
+        tableData{end,8}   = round(prod_val,6);
+        tableData{end,9}   = remark;
+
+        if abs(fc) < tol || err < tol
+            break;
+        end
+
+        if fa * fc < 0
+            b = c;
+        else
+            a = c;
+        end
+
+        c_old = c;
+
+    end
+
+    root = c;
+
+    app.iterTable.Data = tableData;
+
+    cla(app.graphAxes);
+
+    xPlot = linspace(a-1, b+1, 400);
+    yPlot = arrayfun(f, xPlot);
+
+    plot(app.graphAxes, xPlot, yPlot, 'b-', 'LineWidth', 2);
+
+    hold(app.graphAxes, 'on');
+
+    plot(app.graphAxes, [a-1,b+1], [0,0], 'k--', 'LineWidth', 1);
+
+    plot(app.graphAxes, [root root], [-10 10], ...
+        'r--', 'LineWidth', 1.5);
+
+    plot(app.graphAxes, root, 0, 'ro', ...
+        'MarkerSize', 10, 'MarkerFaceColor', 'red');
+
+    text(app.graphAxes, root+0.1, 1.5, ...
+        sprintf('Root=%.4f',root), ...
+        'Color','red','FontSize',9,'FontWeight','bold');
+
+    app.graphAxes.XLabel.String = 'x';
+    app.graphAxes.YLabel.String = 'f(x)';
+    app.graphAxes.Title.String  = 'Regula Falsi Method';
+
+    app.graphAxes.XGrid = 'on';
+    app.graphAxes.YGrid = 'on';
+
+    hold(app.graphAxes, 'off');
+        end
+
+        % Button pushed function: btnNewton
+        function btnNewtonButtonPushed(app, event)
+              x0     = app.aField.Value;
+    tol    = app.tolField.Value;
+    eqnStr = app.eqnFieldEditField.Value;
+
+    if isempty(strtrim(eqnStr))
+        uialert(app.UIFigure,'Please enter an equation.','Error');
+        return;
+    end
+
+    if tol <= 0
+        uialert(app.UIFigure,'Tolerance must be > 0. Try 0.001','Error');
+        return;
+    end
+
+    try
+
+        f = str2func(['@(x)' eqnStr]);
+
+        testVal = f(x0);
+
+        if ~isfinite(testVal)
+            uialert(app.UIFigure,'Equation invalid at x0.','Error');
+            return;
+        end
+
+    catch
+
+        uialert(app.UIFigure,'Invalid equation. Example: x^3-x-2','Error');
+        return;
+
+    end
+
+    df = @(x) (f(x+1e-7) - f(x-1e-7)) / (2e-7);
+
+    app.iterTable.ColumnName = ...
+        {'No. of iteration','x_i','ea','f(x)','df(x)'};
+
+    tableData = {};
+
+    x = x0;
+
+    for iter = 1:50
+
+        fx  = f(x);
+        dfx = df(x);
+
+        if abs(dfx) < 1e-12
+            uialert(app.UIFigure,'Derivative is zero! Choose different x0.','Error');
+            return;
+        end
+
+        x_new = x - fx/dfx;
+
+        if ~isfinite(x_new) || abs(x_new) > 1e10
+            uialert(app.UIFigure,'Solution diverging! Try different x0.','Error');
+            return;
+        end
+
+        err = abs(x_new - x);
+
+        tableData{end+1,1} = iter;
+        tableData{end,2}   = round(x_new,6);
+        tableData{end,3}   = round(err,6);
+        tableData{end,4}   = round(fx,6);
+        tableData{end,5}   = round(dfx,6);
+
+        x = x_new;
+
+        if err < tol
+            break;
+        end
+
+    end
+
+    root = x;
+
+    app.iterTable.Data = tableData;
+
+    cla(app.graphAxes);
+
+    xPlot = linspace(root-3, root+3, 400);
+    yPlot = arrayfun(f, xPlot);
+
+    plot(app.graphAxes, xPlot, yPlot, 'b-', 'LineWidth', 2);
+
+    hold(app.graphAxes, 'on');
+
+    plot(app.graphAxes, [root-3,root+3], [0,0], ...
+        'k--', 'LineWidth', 1);
+
+    plot(app.graphAxes, [root root], [-10 10], ...
+        'r--', 'LineWidth', 1.5);
+
+    plot(app.graphAxes, root, 0, 'ro', ...
+        'MarkerSize', 10, 'MarkerFaceColor', 'red');
+
+    text(app.graphAxes, root+0.1, 1.5, ...
+        sprintf('Root=%.4f',root), ...
+        'Color','red','FontSize',9,'FontWeight','bold');
+
+    app.graphAxes.XLabel.String = 'x';
+    app.graphAxes.YLabel.String = 'f(x)';
+    app.graphAxes.Title.String  = 'Newton-Raphson Method';
+
+    app.graphAxes.XGrid = 'on';
+    app.graphAxes.YGrid = 'on';
+
+    hold(app.graphAxes, 'off');
+        end
+
+        % Button pushed function: btnSecant
+        function btnSecantButtonPushed(app, event)
+             x0     = app.aField.Value;
+    x1     = app.bField.Value;
+    tol    = app.tolField.Value;
+    eqnStr = app.eqnFieldEditField.Value;
+
+    if isempty(strtrim(eqnStr))
+        uialert(app.UIFigure,'Please enter an equation.','Error');
+        return;
+    end
+
+    if x0 == x1
+        uialert(app.UIFigure,'a and b must be different!','Error');
+        return;
+    end
+
+    if tol <= 0
+        uialert(app.UIFigure,'Tolerance must be > 0. Try 0.001','Error');
+        return;
+    end
+
+    try
+
+        f = str2func(['@(x)' eqnStr]);
+
+        testVal = f(x0);
+
+        if ~isfinite(testVal)
+            uialert(app.UIFigure,'Equation invalid at x0.','Error');
+            return;
+        end
+
+    catch
+
+        uialert(app.UIFigure,'Invalid equation. Example: x^3-x-2','Error');
+        return;
+
+    end
+
+    app.iterTable.ColumnName = ...
+        {'Iteration Number','x_(i-1)','x_i','x_(i+1)', ...
+        'ea','f(x_(i-1))','f(x_i)','f(x_(i+1))'};
+
+    tableData = {};
+
+    for iter = 1:50
+
+        f0 = f(x0);
+        f1 = f(x1);
+
+        if abs(f1 - f0) < 1e-12
+            uialert(app.UIFigure,'Near-zero denominator! Change starting points.','Error');
+            return;
+        end
+
+        x_new = x1 - f1*(x1-x0)/(f1-f0);
+
+        if ~isfinite(x_new) || abs(x_new) > 1e10
+            uialert(app.UIFigure,'Solution diverging! Try different points.','Error');
+            return;
+        end
+
+        f_new = f(x_new);
+
+        err = abs(x_new - x1);
+
+        tableData{end+1,1} = iter;
+        tableData{end,2}   = round(x0,6);
+        tableData{end,3}   = round(x1,6);
+        tableData{end,4}   = round(x_new,6);
+        tableData{end,5}   = round(err,6);
+        tableData{end,6}   = round(f0,6);
+        tableData{end,7}   = round(f1,6);
+        tableData{end,8}   = round(f_new,6);
+
+        x0 = x1;
+        x1 = x_new;
+
+        if err < tol
+            break;
+        end
+
+    end
+
+    root = x1;
+
+    app.iterTable.Data = tableData;
+
+    cla(app.graphAxes);
+
+    xPlot = linspace(root-3, root+3, 400);
+    yPlot = arrayfun(f, xPlot);
+
+    plot(app.graphAxes, xPlot, yPlot, 'b-', 'LineWidth', 2);
+
+    hold(app.graphAxes, 'on');
+
+    plot(app.graphAxes, [root-3,root+3], [0,0], ...
+        'k--', 'LineWidth', 1);
+
+    plot(app.graphAxes, [root root], [-10 10], ...
+        'r--', 'LineWidth', 1.5);
+
+    plot(app.graphAxes, root, 0, 'ro', ...
+        'MarkerSize', 10, 'MarkerFaceColor', 'red');
+
+    text(app.graphAxes, root+0.1, 1.5, ...
+        sprintf('Root=%.4f',root), ...
+        'Color','red','FontSize',9,'FontWeight','bold');
+
+    app.graphAxes.XLabel.String = 'x';
+    app.graphAxes.YLabel.String = 'f(x)';
+    app.graphAxes.Title.String  = 'Secant Method';
+
+    app.graphAxes.XGrid = 'on';
+    app.graphAxes.YGrid = 'on';
+
+    hold(app.graphAxes, 'off');
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Color = [0.6902 0.5098 0.349];
+            app.UIFigure.Position = [100 100 640 480];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create graphAxes
+            app.graphAxes = uiaxes(app.UIFigure);
+            title(app.graphAxes, 'graphAxes')
+            xlabel(app.graphAxes, 'X')
+            ylabel(app.graphAxes, 'Y')
+            zlabel(app.graphAxes, 'Z')
+            app.graphAxes.Position = [184 227 429 195];
+
+            % Create NumericalMethodsSolverLabel
+            app.NumericalMethodsSolverLabel = uilabel(app.UIFigure);
+            app.NumericalMethodsSolverLabel.Position = [267 442 146 22];
+            app.NumericalMethodsSolverLabel.Text = 'Numerical Methods Solver';
+
+            % Create aEditFieldLabel
+            app.aEditFieldLabel = uilabel(app.UIFigure);
+            app.aEditFieldLabel.HorizontalAlignment = 'right';
+            app.aEditFieldLabel.Position = [16 149 25 22];
+            app.aEditFieldLabel.Text = 'a=';
+
+            % Create aField
+            app.aField = uieditfield(app.UIFigure, 'numeric');
+            app.aField.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.aField.Position = [56 149 129 22];
+
+            % Create bEditFieldLabel
+            app.bEditFieldLabel = uilabel(app.UIFigure);
+            app.bEditFieldLabel.HorizontalAlignment = 'right';
+            app.bEditFieldLabel.Position = [16 114 25 22];
+            app.bEditFieldLabel.Text = 'b=';
+
+            % Create bField
+            app.bField = uieditfield(app.UIFigure, 'numeric');
+            app.bField.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.bField.Position = [56 114 129 22];
+
+            % Create toleranceEditFieldLabel
+            app.toleranceEditFieldLabel = uilabel(app.UIFigure);
+            app.toleranceEditFieldLabel.HorizontalAlignment = 'right';
+            app.toleranceEditFieldLabel.Position = [19 68 61 22];
+            app.toleranceEditFieldLabel.Text = 'tolerance=';
+
+            % Create tolField
+            app.tolField = uieditfield(app.UIFigure, 'numeric');
+            app.tolField.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.tolField.Position = [85 68 110 22];
+
+            % Create ENTEREQUATIONLabel
+            app.ENTEREQUATIONLabel = uilabel(app.UIFigure);
+            app.ENTEREQUATIONLabel.BackgroundColor = [0.702 0.4941 0.2118];
+            app.ENTEREQUATIONLabel.FontName = 'Trebuchet MS';
+            app.ENTEREQUATIONLabel.FontColor = [0 0 0];
+            app.ENTEREQUATIONLabel.Position = [25 23 108 22];
+            app.ENTEREQUATIONLabel.Text = '  ENTER EQUATION ';
+
+            % Create eqnFieldEditFieldLabel
+            app.eqnFieldEditFieldLabel = uilabel(app.UIFigure);
+            app.eqnFieldEditFieldLabel.HorizontalAlignment = 'right';
+            app.eqnFieldEditFieldLabel.Position = [19 186 51 22];
+            app.eqnFieldEditFieldLabel.Text = 'eqnField';
+
+            % Create eqnFieldEditField
+            app.eqnFieldEditField = uieditfield(app.UIFigure, 'text');
+            app.eqnFieldEditField.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.eqnFieldEditField.Position = [79 186 106 22];
+
+            % Create iterTable
+            app.iterTable = uitable(app.UIFigure);
+            app.iterTable.BackgroundColor = [1 1 1;1 1 1];
+            app.iterTable.ColumnName = {'{''Iteration'''; '''x'''; '''f(x)'''; '''Error''}'};
+            app.iterTable.RowName = {};
+            app.iterTable.Position = [208 23 405 185];
+
+            % Create btnIncremental
+            app.btnIncremental = uibutton(app.UIFigure, 'push');
+            app.btnIncremental.ButtonPushedFcn = createCallbackFcn(app, @btnIncrementalButtonPushed, true);
+            app.btnIncremental.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.btnIncremental.FontName = 'SansSerif';
+            app.btnIncremental.Position = [25 380 100 22];
+            app.btnIncremental.Text = 'INCREMENTAL';
+
+            % Create btnBisection
+            app.btnBisection = uibutton(app.UIFigure, 'push');
+            app.btnBisection.ButtonPushedFcn = createCallbackFcn(app, @btnBisectionButtonPushed, true);
+            app.btnBisection.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.btnBisection.Position = [24 348 100 22];
+            app.btnBisection.Text = 'BISECTION';
+
+            % Create btnRegulaFalsi
+            app.btnRegulaFalsi = uibutton(app.UIFigure, 'push');
+            app.btnRegulaFalsi.ButtonPushedFcn = createCallbackFcn(app, @btnRegulaFalsiButtonPushed, true);
+            app.btnRegulaFalsi.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.btnRegulaFalsi.Position = [24 314 100 21];
+            app.btnRegulaFalsi.Text = 'REGULA FALSI';
+
+            % Create btnNewton
+            app.btnNewton = uibutton(app.UIFigure, 'push');
+            app.btnNewton.ButtonPushedFcn = createCallbackFcn(app, @btnNewtonButtonPushed, true);
+            app.btnNewton.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.btnNewton.Position = [24 280 100 22];
+            app.btnNewton.Text = 'NEWTON';
+
+            % Create btnSecant
+            app.btnSecant = uibutton(app.UIFigure, 'push');
+            app.btnSecant.ButtonPushedFcn = createCallbackFcn(app, @btnSecantButtonPushed, true);
+            app.btnSecant.BackgroundColor = [0.9412 0.7608 0.5804];
+            app.btnSecant.Position = [24 248 100 22];
+            app.btnSecant.Text = 'SECANT';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = root_finding
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
